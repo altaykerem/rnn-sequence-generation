@@ -19,12 +19,41 @@ function main(args="")
     o = parse_args(s; as_symbols=true)
 	o[:seed] = 123
     srand(o[:seed])
-    println("opts=",[(k,v) for (k,v) in o]...)
 	
 	data = Any[]
-	data = split(loaddata("wsj"))
+	data = loaddata("wsj")
+	vocab = wordVocabulary(data)
+	
+	
+	info("opts=",[(k,v) for (k,v) in o]...)
 	#println(data)
-	println(size(data))
+	#println(length(split(data)))
+	info("vocabulary: ", length(vocab))
+	#for key in sort(collect(keys(vocab)))
+    #    println("$key => $(vocab[key])")
+    #end
+	
+	
+end
+
+function wordVocabulary(text)
+	vocab = Dict{String, Int}()
+	nextID = 0
+	for word in split(text)
+		nextID +=1
+		isascii(word) && get!(vocab, word, nextID)
+	end
+	return vocab
+end
+
+function charVocabulary(text)
+	vocab = Dict{Char,Int}()
+	nextID = 0
+	for c in text
+		nextID +=1
+		if isascii(c) get!(vocab, c, nextID) end
+	end
+    return vocab
 end
 
 function loaddata(file; path="C:\\Users\\HP\\Desktop\\Comp 441\\Sequence Generation project\\$file")
