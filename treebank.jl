@@ -21,20 +21,17 @@ function main(args="")
     srand(o[:seed])
 	
 	data = Any[]
-	data = loaddata("wsj")
-	vocab = charVocabulary(data)
+	data,_,_= loaddata()
+	vocab = charVocabulary(data[1])
 	
 	
 	info("opts=",[(k,v) for (k,v) in o]...)
-	#println(data)
-	#println(length(split(data)))
 	info("vocabulary: ", length(vocab))
-	#for key in sort(collect(keys(vocab)))
-    #    println("$key => $(vocab[key])")
-    #end
-	minibatch_char(vocab, data, o[:batchsize])
+	
+	minibatch_char(vocab, data[1], o[:batchsize])
 	
 end
+#cd("Desktop\\Comp 441\\Sequence Generation project\\Sequence Project")
 
 function minibatch_char(vocabulary, text, batchsize)
 	vocab_lenght = length(vocabulary)
@@ -48,22 +45,39 @@ function minibatch_char(vocabulary, text, batchsize)
         row = 1 + div(cidx, batch_N)
         row > batchsize && break
         col = vocabulary[c]
-		#println(c)
-		#println(col)
         data[idata][row,col] = 1
         cidx += 1
 	end
     end
-	println(data)
-    return map(d->convert(KnetArray{Float32},d), data)
+	#map(d->convert(KnetArray{Float32},d), data)
+    return data
 end
+
+function minibatch_word(vocabulary, text, batchsize)
+	vocab_lenght = length(vocabulary)
+	batch_N = div(length(text),batchsize)
+	data = [ falses(batchsize, vocab_lenght) for i=1:batch_N ]
+	
+	cidx = 0
+    for word in split(text)
+	if isascii(word)
+        idata = 1 + cidx % batch_N
+        row = 1 + div(cidx, batch_N)
+        row > batchsize && break
+        col = vocabulary[word]
+        data[idata][row,col] = 1
+        cidx += 1
+	end
+    end
+	#map(d->convert(KnetArray{Float32},d), data)
+    return data
+end
+
 
 function wordVocabulary(text)
 	vocab = Dict{String, Int}()
-	nextID = 0
 	for word in split(text)
-		nextID +=1
-		isascii(word) && get!(vocab, word, nextID)
+		isascii(word) && get!(vocab, word, length(vocab)+1)
 	end
 	return vocab
 end
@@ -78,6 +92,15 @@ function charVocabulary(text)
     return vocab
 end
 
+function loaddata(path="C:\\Users\\HP\\Desktop\\Comp 441\\Sequence Generation project")
+	train="";valid="";test = ""
+	train = map((@compat readstring), Any["$path\\Mikolov_treebank_train.txt"])
+	valid =  map((@compat readstring), Any["$path\\Mikolov_treebank_valid.txt"])
+	test = map((@compat readstring), Any["$path\\Mikolov_treebank_test.txt"])
+	
+	return train,valid,test
+end
+#=== READS ACCORDING TO RAW TREEBANK FILE
 function loaddata(file; path="C:\\Users\\HP\\Desktop\\Comp 441\\Sequence Generation project\\$file")
 	text = "" 
 	for c in readdir(path)
@@ -89,5 +112,6 @@ function loaddata(file; path="C:\\Users\\HP\\Desktop\\Comp 441\\Sequence Generat
 	end
 	return text
 end
+===#
 
 main()
