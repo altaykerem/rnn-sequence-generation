@@ -22,11 +22,11 @@ function main(args="")
 	o[:seed] = 123
     srand(o[:seed])
 	
-	data,valid,train= loaddata()
-	vocab, indices = charVocabulary(data[1])
-	trn = minibatch(vocab, data[1], o[:batchsize])
-	vld = minibatch(vocab, valid[1], o[:batchsize])
-	tst = minibatch(vocab, train[1], o[:batchsize])
+	data,valid,test= loaddata()
+	vocab, indices = wordVocabulary(data[1])
+	trn = minibatch(vocab, split(data[1]), o[:batchsize])
+	vld = minibatch(vocab, split(valid[1]), o[:batchsize])
+	tst = minibatch(vocab, split(test[1]), o[:batchsize])
 	out = Any[]
 	
 	info("opts=",[(k,v) for (k,v) in o]...)
@@ -38,6 +38,12 @@ function main(args="")
 	
 	println((:loss, model(tst, state, out)))
 	report(0,tst)
+	for j=1:size(out,1)
+		for i=1:size(out[1],1)
+			print(reverseVocab(indices, out[j][i,:])) 
+		end
+		println()
+	end
 end
 #cd("Desktop\\Comp 441\\Sequence Generation project\\Sequence Project")
 
@@ -67,7 +73,7 @@ end
 ###									[[[1,0,0,0] [0,0,1,0] [1,0,0,0] [0,0,1,0]]]
 ###	minibatch(dict, abcdabcd, 4) -> [										  ]
 ###									[[[0,1,0,0] [0,0,0,1] [0,1,0,0] [0,0,0,1]]]
-function minibatch(vocabulary, text, batchsize) ###for char use string, for words spilt text
+function minibatch(vocabulary, text, batchsize) ###for words split text
 	vocab_lenght = length(vocabulary)
 	batch_N = div(length(text),batchsize)
 	data = [ falses(batchsize, vocab_lenght) for i=1:batch_N ]
@@ -90,6 +96,8 @@ end
 function wordVocabulary(text)
 	vocab = Dict{String, Int}()
 	indices = Vector{String}()
+	get!(vocab, " ", length(vocab)+1)
+	push!(indices, " ")
 	for word in split(text)
 		if isascii(word) 
 			get!(vocab, word, length(vocab)+1)
