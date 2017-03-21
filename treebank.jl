@@ -22,7 +22,7 @@ function main(args="")
 	
 	data = Any[]
 	data = loaddata("wsj")
-	vocab = wordVocabulary(data)
+	vocab = charVocabulary(data)
 	
 	
 	info("opts=",[(k,v) for (k,v) in o]...)
@@ -32,8 +32,30 @@ function main(args="")
 	#for key in sort(collect(keys(vocab)))
     #    println("$key => $(vocab[key])")
     #end
+	minibatch_char(vocab, data, o[:batchsize])
 	
+end
+
+function minibatch_char(vocabulary, text, batchsize)
+	vocab_lenght = length(vocabulary)
+	batch_N = div(length(text),batchsize)
+	data = [ falses(batchsize, vocab_lenght) for i=1:batch_N ]
 	
+	cidx = 0
+    for c in text
+	if isascii(c)
+        idata = 1 + cidx % batch_N
+        row = 1 + div(cidx, batch_N)
+        row > batchsize && break
+        col = vocabulary[c]
+		#println(c)
+		#println(col)
+        data[idata][row,col] = 1
+        cidx += 1
+	end
+    end
+	println(data)
+    return map(d->convert(KnetArray{Float32},d), data)
 end
 
 function wordVocabulary(text)
@@ -48,10 +70,10 @@ end
 
 function charVocabulary(text)
 	vocab = Dict{Char,Int}()
-	nextID = 0
 	for c in text
-		nextID +=1
-		if isascii(c) get!(vocab, c, nextID) end
+		if isascii(c) 
+			get!(vocab, c, length(vocab)+1) 
+		end
 	end
     return vocab
 end
