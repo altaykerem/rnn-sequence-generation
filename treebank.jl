@@ -6,6 +6,8 @@ using Knet
 using ArgParse # To work with command line argumands
 using Compat
 
+include("utils.jl")
+
 function main(args="")
     s = ArgParseSettings()
     @add_arg_table s begin
@@ -20,20 +22,52 @@ function main(args="")
 	o[:seed] = 123
     srand(o[:seed])
 	
-	data = Any[]
-	data,_,_= loaddata()
-	vocab = charVocabulary(data[1])
-	
+	data,valid,train= loaddata()
+	vocab, indices = charVocabulary(data[1])
+	trn = minibatch(vocab, data[1], o[:batchsize])
+	vld = minibatch(vocab, valid[1], o[:batchsize])
+	tst = minibatch(vocab, train[1], o[:batchsize])
+	out = Any[]
 	
 	info("opts=",[(k,v) for (k,v) in o]...)
 	info("vocabulary: ", length(vocab))
+	report(epoch, input)=println((:epoch,epoch,:acc,accuracy(input, out)))
 	
-	minibatch_char(vocab, data[1], o[:batchsize])
 	
+	state = tst[1]
+	
+	println((:loss, model(tst, state, out)))
+	report(0,tst)
 end
 #cd("Desktop\\Comp 441\\Sequence Generation project\\Sequence Project")
 
-function minibatch_char(vocabulary, text, batchsize)
+###creates a random output independant from input
+function random_cell(input,state;lr=0.1)
+	return softmax(lr*randn(size(input)))
+end
+
+#bits-per-character error
+#average_over_whole_data(-log_2(P(x_(t+1)|y_t))) 
+#P -> softmax, select where x_t is 1
+function bpc(input, ypred)
+	p = sum(input .* softmax(ypred),2)
+	return -sum(log2(p)) / size(ypred,1)
+end
+
+function model(inputs, state, out)
+	sumloss = 0
+	for t in 1:length(inputs)
+        output = random_cell(inputs[t],state)
+        sumloss += bpc(output,inputs[t])
+		push!(out, output)
+    end
+    return sumloss
+end
+
+###									[[[1,0,0,0] [0,0,1,0] [1,0,0,0] [0,0,1,0]]]
+###	minibatch(dict, abcdabcd, 4) -> [										  ]
+###									[[[0,1,0,0] [0,0,0,1] [0,1,0,0] [0,0,0,1]]]
+function minibatch(vocabulary, text, batchsize) ###for char use string, for words spilt text
 	vocab_lenght = length(vocabulary)
 	batch_N = div(length(text),batchsize)
 	data = [ falses(batchsize, vocab_lenght) for i=1:batch_N ]
@@ -53,43 +87,32 @@ function minibatch_char(vocabulary, text, batchsize)
     return data
 end
 
-function minibatch_word(vocabulary, text, batchsize)
-	vocab_lenght = length(vocabulary)
-	batch_N = div(length(text),batchsize)
-	data = [ falses(batchsize, vocab_lenght) for i=1:batch_N ]
-	
-	cidx = 0
-    for word in split(text)
-	if isascii(word)
-        idata = 1 + cidx % batch_N
-        row = 1 + div(cidx, batch_N)
-        row > batchsize && break
-        col = vocabulary[word]
-        data[idata][row,col] = 1
-        cidx += 1
-	end
-    end
-	#map(d->convert(KnetArray{Float32},d), data)
-    return data
-end
-
-
 function wordVocabulary(text)
 	vocab = Dict{String, Int}()
+	indices = Vector{String}()
 	for word in split(text)
-		isascii(word) && get!(vocab, word, length(vocab)+1)
+		if isascii(word) 
+			get!(vocab, word, length(vocab)+1)
+			push!(indices, word)
+		end
 	end
-	return vocab
+	return vocab,indices
 end
 
 function charVocabulary(text)
 	vocab = Dict{Char,Int}()
+	indices = Vector{Char}()
 	for c in text
 		if isascii(c) 
 			get!(vocab, c, length(vocab)+1) 
+			push!(indices, c)
 		end
 	end
-    return vocab
+    return vocab,indices
+end
+
+function reverseVocab(indices, vector)
+	return indices[indmax(vector)]
 end
 
 function loaddata(path="C:\\Users\\HP\\Desktop\\Comp 441\\Sequence Generation project")
