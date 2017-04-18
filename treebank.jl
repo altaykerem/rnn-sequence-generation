@@ -7,49 +7,79 @@ using ArgParse # To work with command line argumands
 using Compat
 
 include("utils.jl")
-
+#cd("Desktop\\Comp 441\\Sequence Generation project\\Sequence Project")
 function main(args="")
     s = ArgParseSettings()
     @add_arg_table s begin
         ("--epochs"; arg_type=Int; default=10; help="number of epoch ")
         ("--batchsize"; arg_type=Int; default=100; help="size of minibatches")
-        ("--hidden"; nargs='*'; arg_type=Int; help="sizes of hidden layers, e.g. --hidden 128 64 for a net with two hidden layers")
-        ("--lr"; arg_type=Float64; default=0.1; help="learning rate")
+        ("--lr"; arg_type=Float64; default=0.0001; help="learning rate")
         ("--winit"; arg_type=Float64; default=0.1; help="w initialized with winit*randn()")
+		("--momentum"; arg_type=Float64; default=0.99; help="momentum")
+		("--clip"; arg_type=Int; default=1; help="gradient clipping")
+		("--unitnumber"; arg_type=Int; default=1000; help="number of units, sequence lenght")
+		("--vocab"; arg_type=Bool; default=false; help="characters or words")
     end
-
     o = parse_args(s; as_symbols=true)
 	o[:seed] = 123
     srand(o[:seed])
 	
-	data,valid,test= loaddata()
-	vocab, indices = wordVocabulary(data[1])
-	trn = minibatch(vocab, split(data[1]), o[:batchsize])
-	vld = minibatch(vocab, split(valid[1]), o[:batchsize])
-	tst = minibatch(vocab, split(test[1]), o[:batchsize])
-	out = Any[]
+	train,valid,test= loaddata()
 	
+	if o[:vocab]	#words or characters as the vocabulary
+		vocab, indices = wordVocabulary(train[1])
+		trn = minibatch(vocab, split(train[1]), o[:batchsize])
+		vld = minibatch(vocab, split(valid[1]), o[:batchsize])
+		tst = minibatch(vocab, split(test[1]), o[:batchsize])
+	else
+		vocab, indices = charVocabulary(train[1])
+		trn = minibatch(vocab, train[1], o[:batchsize])
+		vld = minibatch(vocab, valid[1], o[:batchsize])
+		tst = minibatch(vocab, test[1], o[:batchsize])
+	end
+
+	#initialize weights and states
+	weights = initweights(o[:unitnumber], length(vocab), o[:lr])
+	hidden_state = zeros(o[:unitnumber], o[:batchsize])
+	cell_state = zeros(o[:unitnumber], o[:batchsize])
+	
+	#
 	info("opts=",[(k,v) for (k,v) in o]...)
 	info("vocabulary: ", length(vocab))
-	report(epoch, input)=println((:epoch,epoch,:acc,accuracy(input, out)))
+	#println(size(trn[1]))
+	#report(epoch, input)=println((:epoch,epoch,:acc,accuracy(input, out)))
+	#println((:loss, model(tst, state, out)))
+	#
 	
+	#train
+	for epoch = 1:o[:epochs]
+		
+	end
+	generate(hidden_state, cell_state, weights, indices, n = 100)
+end
+
+function generate(hidden_state, cell_state, weights, indices, n = 100)
+	input = zeros(1,length(vocab))
 	
-	state = tst[1]
-	
-	println((:loss, model(tst, state, out)))
-	report(0,tst)
-	for j=1:size(out,1)
-		for i=1:size(out[1],1)
-			print(reverseVocab(indices, out[j][i,:])) 
-		end
-		println()
+	for t 1:n
+		out = predict(input, hidden_state, cell_state, weights)
+		input = out
+		print(reverseVocab(indices, out[j][i,:]))
 	end
 end
-#cd("Desktop\\Comp 441\\Sequence Generation project\\Sequence Project")
 
-###creates a random output independant from input
-function random_cell(input,state;lr=0.1)
-	return softmax(lr*randn(size(input)))
+function train(inputs, hidden_state, cell_state, weights)
+	for t = 1:lenght(inputs)
+		loss_grad = lossgradient(inputs, hidden_state, cell_state, weights)
+		
+		for w in keys(model)
+			update!(weights[k], loss_grad[k])
+		end
+	end
+end
+
+function predict(input, hidden_state, cell_state, weights)				#lstm architecture of one layer
+	return lstm_cell(input, hidden_state, cell_state, weights)[3]
 end
 
 #bits-per-character error
@@ -60,15 +90,18 @@ function bpc(input, ypred)
 	return -sum(log2(p)) / size(ypred,1)
 end
 
-function model(inputs, state, out)
+function model(inputs, hidden_state, cell_state, weights)
 	sumloss = 0
-	for t in 1:length(inputs)
-        output = random_cell(inputs[t],state)
-        sumloss += bpc(output,inputs[t])
-		push!(out, output)
+	input = inputs[1]
+	for t in length(inputs)
+        ypred = predict(input, hidden_state, cell_state, weights)
+        sumloss += bpc(ypred,inputs[t+1])	# error(Pr(x_t+1|y_t), x_t+1)
+		input = inputs[t+1]
     end
     return sumloss
 end
+
+lossgradient = grad(model)
 
 ###									[[[1,0,0,0] [0,0,1,0] [1,0,0,0] [0,0,1,0]]]
 ###	minibatch(dict, abcdabcd, 4) -> [										  ]
@@ -80,18 +113,49 @@ function minibatch(vocabulary, text, batchsize) ###for words split text
 	
 	cidx = 0
     for c in text
-	if isascii(c)
-        idata = 1 + cidx % batch_N
-        row = 1 + div(cidx, batch_N)
-        row > batchsize && break
-        col = vocabulary[c]
-        data[idata][row,col] = 1
-        cidx += 1
-	end
+		if isascii(c)
+			idata = 1 + cidx % batch_N
+			row = 1 + div(cidx, batch_N)
+			row > batchsize && break
+			col = vocabulary[c]
+			data[idata][row,col] = 1
+			cidx += 1
+		end
     end
 	#map(d->convert(KnetArray{Float32},d), data)
     return data
 end
+
+function initweights(hidden, vocab, winit)
+    w = Dict()
+    # your code starts here
+	w[:xi] = winit*randn(hidden, vocab)
+	w[:hi] = winit*randn(hidden, hidden)
+	w[:ci] = winit*randn(hidden, hidden)
+	w[:bi] = zeros(hidden)
+	w[:xf] = winit*randn(hidden, vocab)
+	w[:hf] = winit*randn(hidden, hidden)
+	w[:cf] = winit*randn(hidden, hidden)
+	w[:bf] = zeros(hidden)
+	w[:xo] = winit*randn(vocab, vocab)
+	w[:ho] = winit*randn(vocab, hidden)
+	w[:co] = winit*randn(vocab, hidden)
+	w[:bo] = zeros(vocab)
+	w[:xc] = winit*randn(hidden, hidden)
+	w[:hc] = winit*randn(hidden, hidden)
+	w[:bc] = zeros(hidden)
+    return w
+end
+
+function initparams(weights;learn = 0.1, clip=0, momentum=1.0)
+    prms = Dict()
+    for k in keys(weights)
+		prms[k] = Momentum(;lr = learn, gclip = clip, gamma=0.9)
+    end
+    return prms
+end
+
+
 
 function wordVocabulary(text)
 	vocab = Dict{String, Int}()

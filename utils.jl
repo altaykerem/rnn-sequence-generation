@@ -15,11 +15,11 @@ function accuracy(ygold, yhat)
 	return correct / (size(ygold, 1)*size(ygold[1],2))
 end
 
-b = zeros(10,5)
-yh = Any[]
-yg = Any[]
-for i=1:10 b[i,mod(i,5)+1]=1 end
-for i=1:41
-	push!(yh, softmax(randn(10,5)))
-	push!(yg, b)
+function lstm_cell(input, hidden, cell, weights)
+    it = sigm(weights[:xi]*input + weights[:hi]*hidden + weights[:ci] + weights[:bi])	#input gate
+	ft = sigm(weights[:xf]*input + weights[:hf]*hidden + weights[:cf] + weights[:bf])	#forget gate
+	ct = ft .* cell + it .* tanh(weights[:xc]*input + weights[:hc]*hidden + weights[:bc])	#cell state
+	ot = sigm(weights[:xo]*input + weights[:ho]*hidden + weights[:co] + weights[:bo])	#output gate
+    ht = ot .* tanh(ct)	#hidden state
+    return (ht,ct, ot)
 end
