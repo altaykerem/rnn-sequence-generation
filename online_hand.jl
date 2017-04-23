@@ -11,15 +11,17 @@ include("utils.jl")
 function main(args="")
     s = ArgParseSettings()
     @add_arg_table s begin
-        ("--epochs"; arg_type=Int; default=10; help="number of epoch ")
-        ("--batchsize"; arg_type=Int; default=100; help="size of minibatches")
-        ("--lr"; arg_type=Float64; default=0.0001; help="learning rate")
+        ("--epochs"; arg_type=Int; default=3; help="number of epoch ")
+        ("--batchsize"; arg_type=Int; default=1; help="size of minibatches")
+        ("--lr"; arg_type=Float64; default=0.1; help="learning rate")
         ("--winit"; arg_type=Float64; default=0.1; help="w initialized with winit*randn()")
 		("--momentum"; arg_type=Float64; default=0.99; help="momentum")
 		("--clip"; arg_type=Int; default=1; help="gradient clipping")
 		("--unitnumber"; arg_type=Int; default=400; help="number of units, sequence lenght")
 		("--mixture";  arg_type=Int; default=20; help="number of mixture components")
 		("--layersize";  arg_type=Int; default=3; help="number of layers")
+		("--seqlength"; arg_type=Int; default=1; help="Number of steps to unroll the network for.")
+		("--atype"; default=(gpu()>=0 ? KnetArray{Float32} : Array{Float32}); help="array type: Array for cpu, KnetArray for gpu")
     end
 
     o = parse_args(s; as_symbols=true)
@@ -27,9 +29,11 @@ function main(args="")
     srand(o[:seed])
     println("opts=",[(k,v) for (k,v) in o]...)
 	
-	data = loaddata("lineStrokes")
+	data = loaddata("lineStrokes")[1:10]
 	
-	
+	#println(size(data))
+	#println(size(data[1]))
+	#println(data[1])
 end
 
 # y is obtained by the network outputs(ypred)
@@ -108,13 +112,36 @@ function init_lstm_weights(hidden, nin, nout, winit)
     return w
 end
 
+function initparams(weights;learn = 0.1, clip=0, momentum=1.0)
+    prms = Dict()
+    for k in keys(weights)
+		prms[k] = Momentum(;lr = learn, gclip = clip, gamma=0.9)
+    end
+    return prms
+end
+
+function minibatch(data, batchsize;atype=Array{Float32})
+	batch_N = div(length(data),batchsize)
+	sequence = [[0 0 0] for i=1:batch_N ]
+
+	cidx = 0
+    for c in data
+		idata = 1 + cidx % batch_N
+		col = 1 + div(cidx, batch_N)
+		col > batchsize && break
+		data[idata][row,col] = 1
+		cidx += 1
+    end
+    return map(d->convert(atype,d), data)
+end
+
 function loaddata(file; path="C:\\Users\\HP\\Desktop\\Comp 441\\Sequence Generation project\\$file")
 	isfile(path)
 	users = readdir(path)
 	#lines = Any[]
 	strokes = Any[]
-	
 	### get the input from file
+	info("Reading data...")
 	for form in users
 		linedirs = readdir("$path\\$form")
 		for linedir in linedirs
@@ -125,11 +152,11 @@ function loaddata(file; path="C:\\Users\\HP\\Desktop\\Comp 441\\Sequence Generat
 				docroot = root(doc) # whiteboard session
 				strokeset = find_element(docroot, "StrokeSet")
 				for stroke in child_elements(strokeset)
-					prevx, prevy = 0
+					prevx, prevy = 0, 0
 					s = Any[]
 					for point in child_elements(stroke)
-						x = attribute(XMLElement(point), "x")
-						y = attribute(XMLElement(point), "y")
+						x = parse(Int, attribute(XMLElement(point), "x"))
+						y = parse(Int, attribute(XMLElement(point), "y"))
 						push!(s, [x-prevx,y-prevy,0])		#keep x,y offsets from previous input
 						prevx = x
 						prevy = y

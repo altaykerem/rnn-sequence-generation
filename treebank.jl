@@ -13,7 +13,7 @@ function main(args="")
     @add_arg_table s begin
         ("--epochs"; arg_type=Int; default=10; help="number of epoch ")
         ("--batchsize"; arg_type=Int; default=100; help="size of minibatches")
-        ("--lr"; arg_type=Float64; default=0.1; help="learning rate")
+        ("--lr"; arg_type=Float64; default=0.3; help="learning rate")
         ("--winit"; arg_type=Float64; default=0.1; help="w initialized with winit*randn()")
 		("--momentum"; arg_type=Float64; default=0.99; help="momentum")
 		("--clip"; arg_type=Int; default=1; help="gradient clipping")
@@ -41,7 +41,7 @@ function main(args="")
 	end
 
 	#initialize weights and states
-	weights = initweights(o[:unitnumber], length(vocab), o[:lr]; atype=o[:atype])
+	weights = initweights(o[:unitnumber], length(vocab), o[:winit]; atype=o[:atype])
 	hidden_state = convert(o[:atype], zeros(o[:unitnumber], o[:batchsize]))
 	cell_state = convert(o[:atype], zeros(o[:unitnumber], o[:batchsize]))
 	params = initparams(weights;learn = o[:lr], clip = o[:clip], momentum = o[:momentum])
@@ -137,7 +137,7 @@ lossgradient = grad(model)
 ###									[[[1,0,0,0] [0,0,1,0] [1,0,0,0] [0,0,1,0]]]
 ###	minibatch(dict, abcdabcd, 4) -> [										  ]
 ###									[[[0,1,0,0] [0,0,0,1] [0,1,0,0] [0,0,0,1]]]
-function minibatch(vocabulary, text, batchsize;atype=KnetArray{Float32}) ###for words split text
+function minibatch(vocabulary, text, batchsize;atype=KnetArray{Float32})
 	vocab_lenght = length(vocabulary)
 	batch_N = div(length(text),batchsize)
 	data = [ falses(vocab_lenght, batchsize) for i=1:batch_N ]
