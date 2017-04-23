@@ -60,12 +60,24 @@ function predict(input, hidden_state, cell_state, weights, n)
 	return result
 end
 
-#P(x_(t+1)|y_t)
-function probability_density()
-	
+#get -log( P(x_(t+1)|y_t) ) 's
+function lossfunc(M, input, output)
+	sum = 0
+	for i=1:M
+		sum -= log(yt[:pi]*bivariate_prob(x1, x2, yt)) 	#add the bivariate probabilities
+		bernoulli_eos = x3*yt[:eos] + (1-x3)*(1-yt[:eos]) #bernoulli end of sentence probabilities
+		sum -= log(bernoulli_eos)
+	end
+	return sum
 end
 
+lossgradient = grad(lossfunc)
+
 function bivariate_prob(x1, x2, yt)
+	end_of_stroke = ypred[1]
+	mv = reshape(ypred[2:end],6,M)
+	pi, mu1, mu2, std1, std2, corr = (mv[1,:],mv[2,:],mv[3,:],mv[4,:],mv[5,:],mv[6,:])
+
 	diff1 = x1-yt[:mu1]
 	diff2 = x2-yt[:mu2]
 	z = (diff1^2)/(yt[:std1]^2)+(diff2^2)/(yt[:std2]^2) - (2*yt[:corr]*diff1*diff2)/yt[:std1]*yt[:std2]
@@ -90,7 +102,7 @@ function init_lstm_weights(hidden, nin, nout, winit)
 	w[:ho] = winit*randn(nout, hidden)
 	w[:co] = winit*randn(nout, hidden)
 	w[:bo] = zeros(nout)
-	w[:xc] = winit*randn(hidden, hidden)
+	w[:xc] = winit*randn(hidden, nin)
 	w[:hc] = winit*randn(hidden, hidden)
 	w[:bc] = zeros(hidden)
     return w

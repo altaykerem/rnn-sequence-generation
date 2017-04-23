@@ -13,89 +13,120 @@ function main(args="")
     @add_arg_table s begin
         ("--epochs"; arg_type=Int; default=10; help="number of epoch ")
         ("--batchsize"; arg_type=Int; default=100; help="size of minibatches")
-        ("--lr"; arg_type=Float64; default=0.0001; help="learning rate")
+        ("--lr"; arg_type=Float64; default=0.1; help="learning rate")
         ("--winit"; arg_type=Float64; default=0.1; help="w initialized with winit*randn()")
 		("--momentum"; arg_type=Float64; default=0.99; help="momentum")
 		("--clip"; arg_type=Int; default=1; help="gradient clipping")
 		("--unitnumber"; arg_type=Int; default=1000; help="number of units, sequence lenght")
-		("--vocab"; arg_type=Bool; default=false; help="characters or words")
+		("--vocab"; arg_type=Bool; default=false; help="characters or words, false for character")
+		("--seqlength"; arg_type=Int; default=25; help="Number of steps to unroll the network for.")
+		("--atype"; default=(gpu()>=0 ? KnetArray{Float32} : Array{Float32}); help="array type: Array for cpu, KnetArray for gpu")
     end
     o = parse_args(s; as_symbols=true)
 	o[:seed] = 123
     srand(o[:seed])
 	
-	train,valid,test= loaddata()
-	
+	#data related
+	train_data,valid,test= loaddata()
 	if o[:vocab]	#words or characters as the vocabulary
-		vocab, indices = wordVocabulary(train[1])
-		trn = minibatch(vocab, split(train[1]), o[:batchsize])
-		vld = minibatch(vocab, split(valid[1]), o[:batchsize])
-		tst = minibatch(vocab, split(test[1]), o[:batchsize])
+		vocab, indices = wordVocabulary(train_data[1])
+		trn = minibatch(vocab, split(train_data[1]), o[:batchsize]; atype=o[:atype])
+		vld = minibatch(vocab, split(valid[1]), o[:batchsize]; atype=o[:atype])
+		tst = minibatch(vocab, split(test[1]), o[:batchsize]; atype=o[:atype])
 	else
-		vocab, indices = charVocabulary(train[1])
-		trn = minibatch(vocab, train[1], o[:batchsize])
-		vld = minibatch(vocab, valid[1], o[:batchsize])
-		tst = minibatch(vocab, test[1], o[:batchsize])
+		vocab, indices = charVocabulary(train_data[1])
+		trn = minibatch(vocab, train_data[1], o[:batchsize]; atype=o[:atype])[1:100]
+		vld = minibatch(vocab, valid[1], o[:batchsize]; atype=o[:atype])[1:100]
+		tst = minibatch(vocab, test[1], o[:batchsize]; atype=o[:atype])[1:100]
 	end
 
 	#initialize weights and states
-	weights = initweights(o[:unitnumber], length(vocab), o[:lr])
-	hidden_state = zeros(o[:unitnumber], o[:batchsize])
-	cell_state = zeros(o[:unitnumber], o[:batchsize])
+	weights = initweights(o[:unitnumber], length(vocab), o[:lr]; atype=o[:atype])
+	hidden_state = convert(o[:atype], zeros(o[:unitnumber], o[:batchsize]))
+	cell_state = convert(o[:atype], zeros(o[:unitnumber], o[:batchsize]))
+	params = initparams(weights;learn = o[:lr], clip = o[:clip], momentum = o[:momentum])
 	
 	#
 	info("opts=",[(k,v) for (k,v) in o]...)
 	info("vocabulary: ", length(vocab))
-	#println(size(trn[1]))
-	#report(epoch, input)=println((:epoch,epoch,:acc,accuracy(input, out)))
-	#println((:loss, model(tst, state, out)))
+	loss(inputs) = model(weights, inputs, hidden_state, cell_state)
+	acc(inputs) = accuracy(inputs[2:end] ,(map(b->predict(weights, b, hidden_state, cell_state), inputs[1:end-1])))
+	report(epoch, inputs) = println((:epoch,epoch,:loss, loss(inputs), :acc, acc(inputs)))
 	#
+
 	
 	#train
+	info("Training... Size of traning: ", length(trn))
+	validate_accuracy = 0
+	report(0, trn)
 	for epoch = 1:o[:epochs]
-		
+		#train
+		train(trn, hidden_state, cell_state, weights, params;seq_length=o[:seqlength])
+		report(epoch, trn)
+			
+		#validate
+		newvalidate = acc(vld)
+		if newvalidate<validate_accuracy
+			println("starting to overfit")
+			break
+		end
+		validate_accuracy = newvalidate
+		println("val: ",validate_accuracy)
 	end
-	generate(hidden_state, cell_state, weights, indices, n = 100)
+	
+	#test
+	report("test", tst)
+	#model output
+	info("Model output")
+	hidden_state = zeros(o[:unitnumber], 1)
+	cell_state = zeros(o[:unitnumber], 1)
+	generate(hidden_state, cell_state, weights, indices, 100)
 end
 
 function generate(hidden_state, cell_state, weights, indices, n = 100)
-	input = zeros(1,length(vocab))
-	
-	for t 1:n
-		out = predict(input, hidden_state, cell_state, weights)
+	input = zeros(length(indices),1)
+	for t=1:n
+		out = predict(weights, input, hidden_state, cell_state)
 		input = out
-		print(reverseVocab(indices, out[j][i,:]))
+		print(reverseVocab(indices, out))
 	end
 end
 
-function train(inputs, hidden_state, cell_state, weights)
-	for t = 1:lenght(inputs)
-		loss_grad = lossgradient(inputs, hidden_state, cell_state, weights)
+function train(inputs, hidden_state, cell_state, weights, prms; seq_length = 25)
+	for t = 1:seq_length:length(inputs)-seq_length
+		r = t:t+seq_length-1
+		loss_grad = lossgradient(weights, inputs, hidden_state, cell_state; range = r)
 		
-		for w in keys(model)
-			update!(weights[k], loss_grad[k])
+		for k in keys(weights)
+			update!(weights[k], loss_grad[k], prms[k])
 		end
 	end
 end
 
-function predict(input, hidden_state, cell_state, weights)				#lstm architecture of one layer
-	return lstm_cell(input, hidden_state, cell_state, weights)[3]
+function predict(weights, input, hidden_state, cell_state)				#lstm architecture of one layer
+	ht = lstm_cell(input, hidden_state, cell_state, weights)[1]
+	return output_layer(weights,ht)
+end
+
+function output_layer(weights, state)
+	return weights[:outw]*state .+ weights[:outb]
 end
 
 #bits-per-character error
 #average_over_whole_data(-log_2(P(x_(t+1)|y_t))) 
 #P -> softmax, select where x_t is 1
 function bpc(input, ypred)
-	p = sum(input .* softmax(ypred),2)
-	return -sum(log2(p)) / size(ypred,1)
+	p = sum(input .* softmax(ypred),1)
+	return -sum(log2(p)) / size(ypred,2)
 end
 
-function model(inputs, hidden_state, cell_state, weights)
+#loss function
+function model(weights, inputs, hidden_state, cell_state; range = 1:length(inputs)-1)
 	sumloss = 0
-	input = inputs[1]
-	for t in length(inputs)
-        ypred = predict(input, hidden_state, cell_state, weights)
-        sumloss += bpc(ypred,inputs[t+1])	# error(Pr(x_t+1|y_t), x_t+1)
+	input = inputs[first(range)]
+	for t in range
+        ypred = predict(weights, input, hidden_state, cell_state)
+        sumloss += bpc(inputs[t+1], ypred)	# error(Pr(x_t+1|y_t), x_t+1)
 		input = inputs[t+1]
     end
     return sumloss
@@ -106,44 +137,51 @@ lossgradient = grad(model)
 ###									[[[1,0,0,0] [0,0,1,0] [1,0,0,0] [0,0,1,0]]]
 ###	minibatch(dict, abcdabcd, 4) -> [										  ]
 ###									[[[0,1,0,0] [0,0,0,1] [0,1,0,0] [0,0,0,1]]]
-function minibatch(vocabulary, text, batchsize) ###for words split text
+function minibatch(vocabulary, text, batchsize;atype=KnetArray{Float32}) ###for words split text
 	vocab_lenght = length(vocabulary)
 	batch_N = div(length(text),batchsize)
-	data = [ falses(batchsize, vocab_lenght) for i=1:batch_N ]
+	data = [ falses(vocab_lenght, batchsize) for i=1:batch_N ]
 	
 	cidx = 0
     for c in text
 		if isascii(c)
 			idata = 1 + cidx % batch_N
-			row = 1 + div(cidx, batch_N)
-			row > batchsize && break
-			col = vocabulary[c]
+			col = 1 + div(cidx, batch_N)
+			col > batchsize && break
+			row = vocabulary[c]
 			data[idata][row,col] = 1
 			cidx += 1
 		end
     end
-	#map(d->convert(KnetArray{Float32},d), data)
-    return data
+    return map(d->convert(atype,d), data)
 end
 
-function initweights(hidden, vocab, winit)
+function initweights(hidden, vocab, winit;atype=KnetArray{Float32})
     w = Dict()
-    # your code starts here
-	w[:xi] = winit*randn(hidden, vocab)
-	w[:hi] = winit*randn(hidden, hidden)
-	w[:ci] = winit*randn(hidden, hidden)
+	#lstm weights
+	w[:xi] = winit*randn(hidden, vocab)		
+	w[:hi] = winit*randn(hidden, hidden)	
+	w[:ci] = winit*randn(hidden, hidden)	
 	w[:bi] = zeros(hidden)
-	w[:xf] = winit*randn(hidden, vocab)
-	w[:hf] = winit*randn(hidden, hidden)
-	w[:cf] = winit*randn(hidden, hidden)
+	w[:xf] = winit*randn(hidden, vocab)		
+	w[:hf] = winit*randn(hidden, hidden)	
+	w[:cf] = winit*randn(hidden, hidden)	
 	w[:bf] = zeros(hidden)
-	w[:xo] = winit*randn(vocab, vocab)
-	w[:ho] = winit*randn(vocab, hidden)
-	w[:co] = winit*randn(vocab, hidden)
-	w[:bo] = zeros(vocab)
-	w[:xc] = winit*randn(hidden, hidden)
-	w[:hc] = winit*randn(hidden, hidden)
-	w[:bc] = zeros(hidden)
+	w[:xo] = winit*randn(hidden, vocab)		
+	w[:ho] = winit*randn(hidden, hidden)	
+	w[:co] = winit*randn(hidden, hidden)	
+	w[:bo] = zeros(hidden)					
+	w[:xc] = winit*randn(hidden, vocab)		
+	w[:hc] = winit*randn(hidden, hidden)	
+	w[:bc] = zeros(hidden)					
+	
+	#output weights
+	w[:outw] = winit*randn(vocab,hidden)
+	w[:outb] = zeros(vocab)
+
+	for k in keys(w)
+		w[k] = convert(atype, w[k])
+	end
     return w
 end
 
@@ -164,8 +202,8 @@ function wordVocabulary(text)
 	push!(indices, " ")
 	for word in split(text)
 		if isascii(word) 
+			if !haskey(vocab,word); push!(indices, word); end
 			get!(vocab, word, length(vocab)+1)
-			push!(indices, word)
 		end
 	end
 	return vocab,indices
@@ -176,8 +214,8 @@ function charVocabulary(text)
 	indices = Vector{Char}()
 	for c in text
 		if isascii(c) 
+			if !haskey(vocab,c); push!(indices, c); end
 			get!(vocab, c, length(vocab)+1) 
-			push!(indices, c)
 		end
 	end
     return vocab,indices

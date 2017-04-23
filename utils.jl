@@ -16,10 +16,10 @@ function accuracy(ygold, yhat)
 end
 
 function lstm_cell(input, hidden, cell, weights)
-    it = sigm(weights[:xi]*input + weights[:hi]*hidden + weights[:ci] + weights[:bi])	#input gate
-	ft = sigm(weights[:xf]*input + weights[:hf]*hidden + weights[:cf] + weights[:bf])	#forget gate
-	ct = ft .* cell + it .* tanh(weights[:xc]*input + weights[:hc]*hidden + weights[:bc])	#cell state
-	ot = sigm(weights[:xo]*input + weights[:ho]*hidden + weights[:co] + weights[:bo])	#output gate
-    ht = ot .* tanh(ct)	#hidden state
-    return (ht,ct, ot)
+    it = sigm(weights[:xi]*input + weights[:hi]*hidden + weights[:ci]*cell .+ weights[:bi])	#input gate
+	ft = sigm(weights[:xf]*input + weights[:hf]*hidden + weights[:cf]*cell .+ weights[:bf])	#forget gate
+	ct = ft .* cell + it .* tanh(weights[:xc]*input + weights[:hc]*hidden .+ weights[:bc])	#cell state
+	ot = sigm(weights[:xo]*input + weights[:ho]*hidden + weights[:co]*cell .+ weights[:bo])	#output gate
+	ht = ot .* tanh(ct)	#hidden state
+    return (ht,ct)
 end
