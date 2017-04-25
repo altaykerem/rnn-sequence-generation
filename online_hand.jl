@@ -43,51 +43,87 @@ function main(args="")
 	#params = initparams(weights;learn = o[:lr], clip = o[:clip], momentum = o[:momentum])
 	
 	println(size(trn[1]))
-	println(trn[1])
-	predict(trn[1], hidden_state, cell_state, weights, o[:layersize])
+	#println(trn[1])
+	ypred = predict(trn[1], hidden_state, cell_state, weights, o[:layersize])
+	yout = output_function(ypred)
+	lossfunc(trn[2], yout)
 end
 
-#get -log( P(x_(t+1)|y_t) ) 's
-function lossfunc(M, input, output)
-	sum = 0
-	for i=1:M
-		sum -= log(yt[:pi]*bivariate_prob(x1, x2, yt)) 	#add the bivariate probabilities
-		bernoulli_eos = x3*yt[:eos] + (1-x3)*(1-yt[:eos]) #bernoulli end of sentence probabilities
-		sum -= log(bernoulli_eos)
+function train(inputs, hidden_state, cell_state, weights, prms; seq_length = 25)
+	for t = 1:seq_length:length(inputs)-seq_length
+		r = t:t+seq_length-1
+		loss_grad = lossgradient(weights, inputs, hidden_state, cell_state; range = r)
+		
+		#update lstm weights
+		for k in keys(weights[1])
+			update!(weights[k], loss_grad[k], prms[k])
+		end
+		
+		#update output weights
+		for k in keys(weights[2])
+			update!(weights[k], loss_grad[k], prms[k])
+		end
 	end
+end
+
+#sequence loss
+function model(input, hidden_state, cell_state, weights; range = 1:length(inputs)-1)
+	sumloss = 0
+	input = inputs[first(range)]
+	for t in range
+        ypred = predict(input, hidden_state, cell_state, weights, length(hidden_state))
+        sumloss += lossfunc(inputs[t+1], ypred)	# error(Pr(x_t+1|y_t), x_t+1)
+		input = inputs[t+1]
+    end
+    return sumloss
+end
+
+lossgradient = grad(model)
+
+#get -log( P(x_(t+1)|y_t) ) 's
+function lossfunc(input, ypred)
+	M = div((size(ypred,1)-1),6)
+	eos = ypred[1,:]
+	sum = 0
+	for j=1:M
+		pi_j = ypred[1+j,:]
+		sum -= log(pi_j.*bivariate_prob(input, ypred, j)) 	#add the bivariate probabilities
+	end
+	bernoulli_eos = input[3,:].*eos + (1-input[3,:]).*(1-eos) #bernoulli end of sentence probabilities
+	sum -= log(bernoulli_eos)
 	return sum
 end
 
-lossgradient = grad(lossfunc)
+#Given one of the mixtures,j range(1,M), returns the bivariate probability density function
+function bivariate_prob(input, ypred, j)
+	M = div((size(ypred,1)-1),6)
+	mu1, mu2, std1, std2, corr = (ypred[M+1+j,:],ypred[2M+1+j,:],ypred[3M+1+j,:],ypred[4M+1+j,:],ypred[5M+1+j,:])
 
-function bivariate_prob(x1, x2, yt)
-	end_of_stroke = ypred[1]
-	mv = reshape(ypred[2:end],6,M)
-	pi, mu1, mu2, std1, std2, corr = (mv[1,:],mv[2,:],mv[3,:],mv[4,:],mv[5,:],mv[6,:])
-
-	diff1 = x1-yt[:mu1]
-	diff2 = x2-yt[:mu2]
-	z = (diff1^2)/(yt[:std1]^2)+(diff2^2)/(yt[:std2]^2) - (2*yt[:corr]*diff1*diff2)/yt[:std1]*yt[:std2]
-	k = 1 - yt[:corr]
-	density = exp(-z/(2*k))
-	density *= 1/(2*yt[:w]*yt[:std1]*yt[:std2]*sqrt(k))
+	diff1 = input[1,:]-mu1
+	diff2 = input[2,:]-mu2
+	z = (diff1.^2)./(std1.^2)+(diff2.^2)./(std2.^2) - (2*corr.*diff1.*diff2)./(std1.*std2)
+	k = 1 - corr.^2
+	density = exp(-z./(2*k))
+	density = density./(2*pi.*std1.*std2.*sqrt(k))
 	return density
 end
 
 # y is obtained by the network outputs(ypred)
-function output_function(ypred, M)
-	end_of_stroke = ypred[1]
-	mv = reshape(ypred[2:end],6,M) #mixture vectors; {pi, mu(x1,x2), std(x1,x2), corr}M 
-	w, mu1, mu2, std1, std2, corr = (mv[1,:],mv[2,:],mv[3,:],mv[4,:],mv[5,:],mv[6,:])
+function output_function(ypred)
+	out = zeros(size(ypred))
+	M = div((size(ypred,1)-1),6)
+	#mixture vectors; eos{pi, mu(x1,x2), std(x1,x2), corr}M 
+	end_of_stroke = ypred[1,:]
+	w, mu1, mu2, std1, std2, corr = (ypred[2:M+1,:],ypred[2+M:2M+1,:],ypred[2M+2:3M+1,:],ypred[3M+2:4M+1,:],ypred[4M+2:5M+1,:],ypred[5M+2:6M+1,:])
 	
 	#corresponding outputs of the predictions
-	et = sigm(end_of_stroke)
-	pi = softmax(w)
-	std1 = exp(std1)
-	std2 = exp(std2)
-	corr = tanh(corr)
+	out[1,:] = sigm(end_of_stroke)
+	out[2:M+1,:] = softmax(w)				#pi
+	out[3M+2:4M+1,:] = exp(std1)
+	out[4M+2:5M+1,:] = exp(std2)
+	out[5M+2:6M+1,:] = tanh(corr)
 	
-	return vcat(et, vec([pi mu1 mu2 std1 std2 corr]'))
+	return out
 end
 
 #given the number of layers,n , returns network outputs
@@ -98,7 +134,7 @@ function predict(input, hidden_state, cell_state, weights, n)
 	outw = weights[2]
 	#iterate over the layers
 	for i=1:n
-		hidden,_ = lstm_cell(input, hidden_state[i].+ hidden, cell_state[i], lstmw[i])
+		hidden,cell_state[i] = lstm_cell(input, hidden_state[i].+ hidden, cell_state[i], lstmw[i])
 	end
 	return outw[:outw]*hidden .+ outw[:outb]
 end
@@ -129,7 +165,7 @@ function initweights(hidden, nin, winit;atype=KnetArray{Float32})
     return w
 end
 
-#initialize weights for lstm
+#initialize weights for output
 function initoutweights(hidden, nout, winit;atype=KnetArray{Float32})
     w = Dict()				
 	
@@ -201,4 +237,4 @@ function loaddata(file; path="C:\\Users\\HP\\Desktop\\Comp 441\\Sequence Generat
 	return strokes
 end
 
-main()
+#main()

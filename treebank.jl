@@ -12,7 +12,7 @@ function main(args="")
     s = ArgParseSettings()
     @add_arg_table s begin
         ("--epochs"; arg_type=Int; default=10; help="number of epoch ")
-        ("--batchsize"; arg_type=Int; default=100; help="size of minibatches")
+        ("--batchsize"; arg_type=Int; default=1; help="size of minibatches")
         ("--lr"; arg_type=Float64; default=0.3; help="learning rate")
         ("--winit"; arg_type=Float64; default=0.1; help="w initialized with winit*randn()")
 		("--momentum"; arg_type=Float64; default=0.99; help="momentum")
@@ -104,7 +104,8 @@ function train(inputs, hidden_state, cell_state, weights, prms; seq_length = 25)
 end
 
 function predict(weights, input, hidden_state, cell_state)				#lstm architecture of one layer
-	ht = lstm_cell(input, hidden_state, cell_state, weights)[1]
+	<#println("predict", cell_state[1,1])
+	ht, cell_state = lstm_cell(input, hidden_state, cell_state, weights)
 	return output_layer(weights,ht)
 end
 
