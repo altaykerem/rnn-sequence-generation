@@ -7,7 +7,8 @@ using ArgParse # To work with command line argumands
 using LightXML
 
 include("utils.jl")
-#cd("Desktop\\Comp 441\\Sequence Generation project\\Sequence Project")
+include("online_data_loader.jl")
+
 function main(args="")
     s = ArgParseSettings()
     @add_arg_table s begin
@@ -35,7 +36,7 @@ function main(args="")
 	output_len = 1+(6*o[:mixture]) #eos + (20 weights, 40 means, 40 standard deviations and 20 correlations) were used in experiments
 	
 	#initialize weights and states
-	lstmweights = [ initweights(o[:unitnumber], 3, o[:winit]; atype=o[:atype]) for i=1:o[:layersize] ]
+	lstmweights = [ initlstmweights(o[:unitnumber], 3, o[:winit]; atype=o[:atype]) for i=1:o[:layersize] ]
 	outputweights = initoutweights(o[:unitnumber], output_len, o[:winit]; atype=o[:atype])
 	weights = (lstmweights, outputweights)
 	hidden_state = [ convert(o[:atype], zeros(o[:unitnumber], o[:batchsize])) for i=1:o[:layersize] ]
@@ -139,31 +140,6 @@ function predict(input, hidden_state, cell_state, weights, n)
 	return outw[:outw]*hidden .+ outw[:outb]
 end
 
-#initialize weights for lstm
-function initweights(hidden, nin, winit;atype=KnetArray{Float32})
-    w = Dict()
-	#lstm weights
-	w[:xi] = winit*randn(hidden, nin)		
-	w[:hi] = winit*randn(hidden, hidden)	
-	w[:ci] = winit*randn(hidden, hidden)	
-	w[:bi] = zeros(hidden)
-	w[:xf] = winit*randn(hidden, nin)		
-	w[:hf] = winit*randn(hidden, hidden)	
-	w[:cf] = winit*randn(hidden, hidden)	
-	w[:bf] = zeros(hidden)
-	w[:xo] = winit*randn(hidden, nin)		
-	w[:ho] = winit*randn(hidden, hidden)	
-	w[:co] = winit*randn(hidden, hidden)	
-	w[:bo] = zeros(hidden)					
-	w[:xc] = winit*randn(hidden, nin)		
-	w[:hc] = winit*randn(hidden, hidden)	
-	w[:bc] = zeros(hidden)					
-
-	for k in keys(w)
-		w[k] = convert(atype, w[k])
-	end
-    return w
-end
 
 #initialize weights for output
 function initoutweights(hidden, nout, winit;atype=KnetArray{Float32})
@@ -185,56 +161,6 @@ function initparams(weights;learn = 0.1, clip=0, momentum=1.0)
 		prms[k] = Momentum(;lr = learn, gclip = clip, gamma=0.9)
     end
     return prms
-end
-
-function minibatch(data, batchsize;atype=Array{Float32})
-	batch_N = div(length(data),batchsize)
-	sequence = [ zeros(3, batchsize) for i=1:batch_N ]
-
-	idx = 0
-    for p in data
-		ibatch = 1 + idx % batch_N 
-		ind = 1+div(idx, batch_N)
-		ind > batchsize && break
-		sequence[ibatch][:,ind] = p
-		idx += 1
-    end
-    return map(d->convert(atype,d), sequence)
-end
-
-function loaddata(file; path="C:\\Users\\HP\\Desktop\\Comp 441\\Sequence Generation project\\$file")
-	isfile(path)
-	users = readdir(path)
-	#lines = Any[]
-	strokes = Any[]
-	### get the input from file
-	info("Reading data...")
-	for form in users
-		linedirs = readdir("$path\\$form")
-		for linedir in linedirs
-			line = readdir("$path\\$form\\$linedir")
-			#push!(lines, line)
-			for xml in line
-				doc = parse_file("$path\\$form\\$linedir\\$xml")
-				docroot = root(doc) # whiteboard session
-				strokeset = find_element(docroot, "StrokeSet")
-				for stroke in child_elements(strokeset)
-					prevx, prevy = 0, 0
-					for point in child_elements(stroke)
-						x = parse(Int, attribute(XMLElement(point), "x"))
-						y = parse(Int, attribute(XMLElement(point), "y"))
-						push!(strokes, [x-prevx,y-prevy,0])		#keep x,y offsets from previous input
-						prevx = x
-						prevy = y
-					end
-					strokes[end][3] = 1							#1 indicating end of stroke
-					free(stroke)
-				end
-			end
-			break
-		end
-	end
-	return strokes
 end
 
 main()

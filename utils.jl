@@ -23,3 +23,29 @@ function lstm_cell(input, hidden, cell, weights)
 	ht = ot .* tanh(ct)	#hidden state
     return (ht,ct)
 end
+
+#initialize weights for lstm
+function initlstmweights(hidden, nin, winit;atype=KnetArray{Float32})
+    w = Dict()
+	#lstm weights
+	w[:xi] = winit*randn(hidden, nin)		
+	w[:hi] = winit*randn(hidden, hidden)	
+	w[:ci] = winit*randn(hidden, hidden)	
+	w[:bi] = zeros(hidden)
+	w[:xf] = winit*randn(hidden, nin)		
+	w[:hf] = winit*randn(hidden, hidden)	
+	w[:cf] = winit*randn(hidden, hidden)	
+	w[:bf] = zeros(hidden)
+	w[:xo] = winit*randn(hidden, nin)		
+	w[:ho] = winit*randn(hidden, hidden)	
+	w[:co] = winit*randn(hidden, hidden)	
+	w[:bo] = zeros(hidden)					
+	w[:xc] = winit*randn(hidden, nin)		
+	w[:hc] = winit*randn(hidden, hidden)	
+	w[:bc] = zeros(hidden)					
+
+	for k in keys(w)
+		w[k] = convert(atype, w[k])
+	end
+    return w
+end
