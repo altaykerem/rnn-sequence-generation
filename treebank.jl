@@ -12,7 +12,7 @@ function main(args="")
     s = ArgParseSettings()
     @add_arg_table s begin
         ("--epochs"; arg_type=Int; default=10; help="number of epoch ")
-        ("--batchsize"; arg_type=Int; default=1; help="size of minibatches")
+        ("--batchsize"; arg_type=Int; default=5; help="size of minibatches")
         ("--lr"; arg_type=Float64; default=0.3; help="learning rate")
         ("--winit"; arg_type=Float64; default=0.1; help="w initialized with winit*randn()")
 		("--momentum"; arg_type=Float64; default=0.99; help="momentum")
@@ -42,8 +42,8 @@ function main(args="")
 
 	#initialize weights and states
 	weights = initweights(o[:unitnumber], length(vocab), o[:winit]; atype=o[:atype])
-	hidden_state = convert(o[:atype], zeros(o[:unitnumber], o[:batchsize]))
-	cell_state = convert(o[:atype], zeros(o[:unitnumber], o[:batchsize]))
+	hidden_state = initstate(o[:atype],o[:unitnumber], o[:batchsize])
+	cell_state = initstate(o[:atype], o[:unitnumber], o[:batchsize])
 	params = initparams(weights;learn = o[:lr], clip = o[:clip], momentum = o[:momentum])
 	
 	#
@@ -78,8 +78,8 @@ function main(args="")
 	report("test", tst)
 	#model output
 	info("Model output")
-	hidden_state = zeros(o[:unitnumber], 1)
-	cell_state = zeros(o[:unitnumber], 1)
+	hidden_state = [zeros(o[:unitnumber], 1)]
+	cell_state = [zeros(o[:unitnumber], 1)]
 	generate(hidden_state, cell_state, weights, indices, 100)
 end
 
@@ -104,13 +104,12 @@ function train(inputs, hidden_state, cell_state, weights, prms; seq_length = 25)
 end
 
 function predict(weights, input, hidden_state, cell_state)				#lstm architecture of one layer
-	#println("predict", cell_state[1,1])
-	ht, cell_state = lstm_cell(input, hidden_state, cell_state, weights)
-	return output_layer(weights,ht)
+	hidden_state[1], cell_state[1] = lstm_cell(input, hidden_state[1], cell_state[1], weights)
+	return output_layer(weights,hidden_state)
 end
 
 function output_layer(weights, state)
-	return weights[:outw]*state .+ weights[:outb]
+	return weights[:outw]*state[1] .+ weights[:outb]
 end
 
 #bits-per-character error
@@ -194,7 +193,11 @@ function initparams(weights;learn = 0.1, clip=0, momentum=1.0)
     return prms
 end
 
-
+function initstate(atype, hidden, batchsize)
+    state = Any[]
+	push!(state, zeros(hidden, batchsize))
+    return  map(s->convert(atype,s), state)
+end
 
 function wordVocabulary(text)
 	vocab = Dict{String, Int}()

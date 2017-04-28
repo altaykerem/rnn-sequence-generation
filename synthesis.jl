@@ -32,24 +32,25 @@ function main(args="")
 	window_size = lenght(alphabet)
 	vocab = charVocabulary(alphabet)
 	hsize = o[:unitnumber]
+	c = characterSequence(vocab, sentence)
 	
 	###initialize weights
-	#lstm1 (x, prev, prevWindow) -> h
+		#lstm1 (x, prev, prevWindow) -> h
 	lstm_layer1_weights = initlstmweights(hsize, 3 + window_size, o[:winit]; atype=o[:atype])
 	windowweights = initwindowweights(o[:unitnumber], 3*o[:kmixture]; atype=o[:atype])
-	#lstmN (x, prevhN, hN-1, window) -> h
+		#lstmN (x, prevhN, hN-1, window) -> h
 	lstm_layer2_weights = initlstmweights(hsize, 3 + hsize + window_size, o[:winit]; atype=o[:atype])
 	lstm_layer3_weights = initlstmweights(hsize, 3 + hsize + window_size, o[:winit]; atype=o[:atype])
-	outputweights = initoutweights(o[:unitnumber], output_len, o[:winit]; atype=o[:atype])
+	outputweights = initoutweights(hsize, output_len, o[:winit]; atype=o[:atype])
+	weights = (lstm_layer1_weights, windowweights, lstm_layer2_weights,lstm_layer3_weights, outputweights)
 	
+	###initialize states
 	hidden_state = [ convert(o[:atype], zeros(o[:unitnumber], batchsize)) for i=1:3 ]
 	cell_state = [ convert(o[:atype], zeros(o[:unitnumber], batchsize)) for i=1:3 ]
 	kappa = zeros(nmixtures)
 	window = zeros(window_size)
 
 
-	
-	c = characterSequence(vocab, sentence)
 	#####predict
 	#layer 1
 	hidden,cell_state[1] = lstm_cell(input, hidden_state[1].+ hidden, cell_state[1], lstmw[1])
