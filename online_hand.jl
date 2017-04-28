@@ -237,4 +237,4 @@ function loaddata(file; path="C:\\Users\\HP\\Desktop\\Comp 441\\Sequence Generat
 	return strokes
 end
 
-#main()
+main()

@@ -37,7 +37,51 @@ function main(args="")
 	weights = (lstmweights, outputweights)
 	hidden_state = [ convert(o[:atype], zeros(o[:unitnumber], batchsize)) for i=1:3 ]
 	cell_state = [ convert(o[:atype], zeros(o[:unitnumber], batchsize)) for i=1:3 ]
+	kappa = zeros(nmixtures)
+	window = zeros(lenght(alphabet))
+	#window weights
+	wparam_size = 3*nmixtures
+	window_w = winit*randn(wparam_size, hidden)
+	window_b = zeros(wparam_size)
 	
+	c = characterSequence(vocab, sentence)
+	#####predict
+	#layer 1
+	hidden,cell_state[1] = lstm_cell(input, hidden_state[1].+ hidden, cell_state[1], lstmw[1])
+	#soft window, k-number of mixture elements = 3, t
+	(alpha,beta, k) = windowParams(hidden, kappa)
+	window = softWindow(alpha, beta, kappa, c)
+	
+	
+end
+
+function softWindow(alpha, beta, kappa, c)
+	w = zeros(length(c))
+	for u=1:length(c)
+		w += window_weight_func(u,alpha,beta, k)*c[u]
+	end
+	return w
+end
+
+function windowParams(input, prevk)
+	nmixtures = size(input,1)/3
+	alphahat, betahat, khat = (input[1:nmixtures,:],input[1+nmixtures:2nmixtures,:],input[1+2nmixtures:3nmixtures,:])
+	alpha = exp(alphahat)
+	beta = exp(betahat)
+	k = prevk + exp(khat)
+	return alpha,beta, k
+end
+
+function window_weight_func(u,alpha,beta, k)
+	return sum(alpha .* exp(-beta .* (k .- u).^2),1)
+end
+
+function characterSequence(vocab, sequence)
+	seq = Any[]
+	for c in sequence
+		push!(seq, onehot(vocab, c))
+	end
+	return seq
 end
 
 function onehot(vocabulary, char;atype=Array{Float32})

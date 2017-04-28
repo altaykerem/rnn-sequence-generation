@@ -104,7 +104,7 @@ function train(inputs, hidden_state, cell_state, weights, prms; seq_length = 25)
 end
 
 function predict(weights, input, hidden_state, cell_state)				#lstm architecture of one layer
-	<#println("predict", cell_state[1,1])
+	#println("predict", cell_state[1,1])
 	ht, cell_state = lstm_cell(input, hidden_state, cell_state, weights)
 	return output_layer(weights,ht)
 end
