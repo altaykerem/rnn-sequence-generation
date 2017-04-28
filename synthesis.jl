@@ -29,20 +29,25 @@ function main(args="")
 	alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ .,?!'"
 	sentence = "Kerem Altay" #sequence to synthesize
 	output_len = 1+(6*o[:mixture]) #eos + (20 weights, 40 means, 40 standard deviations and 20 correlations) were used in experiments
+	window_size = lenght(alphabet)
 	vocab = charVocabulary(alphabet)
+	hsize = o[:unitnumber]
 	
-	#initialize weights and states
-	lstm_layer1_weights = initlstmweights
+	###initialize weights
+	#lstm1 (x, prev, prevWindow) -> h
+	lstm_layer1_weights = initlstmweights(hsize, 3 + window_size, o[:winit]; atype=o[:atype])
+	windowweights = initwindowweights(o[:unitnumber], 3*o[:kmixture]; atype=o[:atype])
+	#lstmN (x, prevhN, hN-1, window) -> h
+	lstm_layer2_weights = initlstmweights(hsize, 3 + hsize + window_size, o[:winit]; atype=o[:atype])
+	lstm_layer3_weights = initlstmweights(hsize, 3 + hsize + window_size, o[:winit]; atype=o[:atype])
 	outputweights = initoutweights(o[:unitnumber], output_len, o[:winit]; atype=o[:atype])
-	weights = (lstmweights, outputweights)
+	
 	hidden_state = [ convert(o[:atype], zeros(o[:unitnumber], batchsize)) for i=1:3 ]
 	cell_state = [ convert(o[:atype], zeros(o[:unitnumber], batchsize)) for i=1:3 ]
 	kappa = zeros(nmixtures)
-	window = zeros(lenght(alphabet))
-	#window weights
-	wparam_size = 3*nmixtures
-	window_w = winit*randn(wparam_size, hidden)
-	window_b = zeros(wparam_size)
+	window = zeros(window_size)
+
+
 	
 	c = characterSequence(vocab, sentence)
 	#####predict
@@ -112,6 +117,33 @@ function output_function(ypred)
 	return out
 end
 ###End mixture density model
+
+#initialize weights for output
+function initoutweights(hidden, nout, winit;atype=KnetArray{Float32})
+    w = Dict()				
+	
+	#output weights
+	w[:outw] = winit*randn(nout,hidden)
+	w[:outb] = zeros(nout)
+
+	for k in keys(w)
+		w[k] = convert(atype, w[k])
+	end
+    return w
+end
+#initialize weights for window
+function initwindowweights(hidden, wparam_size, winit;atype=KnetArray{Float32})
+    w = Dict()				
+	
+	#output weights
+	w[:window_w] = winit*randn(wparam_size, hidden)
+	w[:window_b] = zeros(wparam_size)
+
+	for k in keys(w)
+		w[k] = convert(atype, w[k])
+	end
+    return w
+end
 
 function characterSequence(vocab, sequence)
 	seq = Any[]
