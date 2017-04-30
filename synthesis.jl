@@ -25,6 +25,10 @@ function main(args="")
     end
 	o = parse_args(s; as_symbols=true)
 	
+	###data
+	data = loaddata("lineStrokes")[1:10]
+	trn = minibatch(data, o[:batchsize])
+	
 	#fixed variables
 	alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ .,?!'"
 	sentence = "Kerem Altay" #sequence to synthesize
@@ -42,23 +46,37 @@ function main(args="")
 	lstm_layer2_weights = initlstmweights(hsize, 3 + hsize + window_size, o[:winit]; atype=o[:atype])
 	lstm_layer3_weights = initlstmweights(hsize, 3 + hsize + window_size, o[:winit]; atype=o[:atype])
 	outputweights = initoutweights(hsize, output_len, o[:winit]; atype=o[:atype])
-	weights = (lstm_layer1_weights, windowweights, lstm_layer2_weights,lstm_layer3_weights, outputweights)
+	weights = [lstm_layer1_weights, windowweights, lstm_layer2_weights,lstm_layer3_weights, outputweights]
 	
 	###initialize states
 	hidden_state = [ convert(o[:atype], zeros(o[:unitnumber], batchsize)) for i=1:3 ]
 	cell_state = [ convert(o[:atype], zeros(o[:unitnumber], batchsize)) for i=1:3 ]
-	kappa = zeros(nmixtures)
-	window = zeros(window_size)
+	window = [zeros(window_size)]
+	kappa = [zeros(nmixtures)]
+	
 
-
-	#####predict
-	#layer 1
-	hidden,cell_state[1] = lstm_cell(input, hidden_state[1].+ hidden, cell_state[1], lstmw[1])
-	#soft window, k-number of mixture elements = 3, t
-	(alpha,beta, k) = windowParams(hidden, kappa)
-	window = softWindow(alpha, beta, kappa, c)
 	
 	
+end
+
+# ypred = [e, {pi, mu, std, corr}M] = b(y) + sum(W(hny) * h(nt))^N-n=1
+function predict(input, hidden_state, cell_state, weights, window, kappa)
+	#layer1
+	hidden_state[1],cell_state[1] = lstm_cell(vcat(input, window), hidden_state[1], cell_state[1], weights[1])
+	
+	#soft window, k-number of mixture elements = 3
+	window_w = weights[2]
+	window_input = window_w[:window_w]*hidden_state[1] .+ window_w[:outb]
+	(alpha,beta, kappa[1]) = windowParams(window_input, kappa[1])
+	window[1] = softWindow(alpha, beta, kappa[1], c)
+	
+	#layer2,3
+	hidden_state[2],cell_state[2] = lstm_cell(vcat(input, window, hidden_state[1]), hidden_state[1], cell_state[1], weights[3])
+	hidden_state[3],cell_state[3] = lstm_cell(vcat(input, window, hidden_state[2]), hidden_state[1], cell_state[1], weights[4])
+	
+	#output layer
+	outw = weights[5]
+	return outw[:outw]*hidden_state[end] .+ outw[:outb]
 end
 
 ###Soft window
