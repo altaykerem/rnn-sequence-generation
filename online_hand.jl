@@ -36,15 +36,15 @@ function main(args="")
 	output_len = 1+(6*o[:mixture]) #eos + (20 weights, 40 means, 40 standard deviations and 20 correlations) were used in experiments
 	
 	#initialize weights and states
-	lstmweights = [ initlstmweights(o[:unitnumber], 3, o[:winit]; atype=o[:atype]) for i=1:o[:layersize] ]
-	outputweights = initoutweights(o[:unitnumber], output_len, o[:winit]; atype=o[:atype])
+	layer1weights = initlstmweights(o[:unitnumber], 3, o[:winit]; atype=o[:atype])
+	lstmweights = [ initlstmweights(o[:unitnumber], 3 + o[:unitnumber], o[:winit]; atype=o[:atype]) for i=2:o[:layersize] ]
+	lstmweights = vcat(layer1weights, lstmweights)
+	outputweights = initoutweights(o[:layersize]*o[:unitnumber], output_len, o[:winit]; atype=o[:atype])
 	weights = (lstmweights, outputweights)
 	hidden_state = [ convert(o[:atype], zeros(o[:unitnumber], o[:batchsize])) for i=1:o[:layersize] ]
 	cell_state = [ convert(o[:atype], zeros(o[:unitnumber], o[:batchsize])) for i=1:o[:layersize] ]
 	#params = initparams(weights;learn = o[:lr], clip = o[:clip], momentum = o[:momentum])
-	
-	println(size(trn[1]))
-	#println(trn[1])
+
 	ypred = predict(trn[1], hidden_state, cell_state, weights, o[:layersize])
 	yout = output_function(ypred)
 	lossfunc(trn[2], yout)
@@ -130,14 +130,14 @@ end
 #given the number of layers,n , returns network outputs
 # ypred = [e, {pi, mu, std, corr}M] = b(y) + sum(W(hny) * h(nt))^N-n=1
 function predict(input, hidden_state, cell_state, weights, n)
-	hidden = zeros(size(hidden_state[1])) #hidden state passed between layers
-	lstmw = first(weights)
+	lstmw = weights[1]
 	outw = weights[2]
 	#iterate over the layers
-	for i=1:n
-		hidden,cell_state[i] = lstm_cell(input, hidden_state[i].+ hidden, cell_state[i], lstmw[i])
+	hidden_state[1],cell_state[1] = lstm_cell(input, hidden_state[1], cell_state[1], lstmw[1])
+	for i=2:n
+		hidden_state[i],cell_state[i] = lstm_cell(vcat(input, hidden_state[i-1]), hidden_state[i], cell_state[i], lstmw[i])
 	end
-	return outw[:outw]*hidden .+ outw[:outb]
+	return outw[:outw]*hcat(hidden_state) .+ outw[:outb]
 end
 
 
