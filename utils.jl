@@ -1,3 +1,15 @@
+Pkg.installed("Gadfly") == nothing && Pkg.add("Gadfly")
+using Gadfly
+
+function plotStrokes(strokes; title = "")
+	println("Plotting... ",title)
+	println(size(strokes))
+	xses = hcat(strokes...)[1,:]
+	ys = hcat(strokes...)[2,:]
+	println(xses)
+	println(ys)
+	plot(x=xses, y=ys, Geom.point, Geom.line)
+end
 
 function softmax(ypred)
 	ypred = ypred .- maximum(ypred, 1)
@@ -49,3 +61,5 @@ function initlstmweights(hidden, nin, winit;atype=KnetArray{Float32})
 	end
     return w
 end
+
+

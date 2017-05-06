@@ -13,7 +13,7 @@ function main(args="")
     s = ArgParseSettings()
     @add_arg_table s begin
         ("--epochs"; arg_type=Int; default=3; help="number of epoch ")
-        ("--batchsize"; arg_type=Int; default=5; help="size of minibatches")
+        ("--batchsize"; arg_type=Int; default=1; help="size of minibatches")
         ("--lr"; arg_type=Float64; default=0.1; help="learning rate")
         ("--winit"; arg_type=Float64; default=0.1; help="w initialized with winit*randn()")
 		("--momentum"; arg_type=Float64; default=0.99; help="momentum")
@@ -33,6 +33,7 @@ function main(args="")
 	###data
 	data = loaddata("lineStrokes")[1:10]
 	trn = minibatch(data, o[:batchsize])
+	info("Read, number of batches: ",length(trn))
 	output_len = 1+(6*o[:mixture]) #eos + (20 weights, 40 means, 40 standard deviations and 20 correlations) were used in experiments
 	
 	#initialize weights and states
@@ -92,6 +93,9 @@ function lossfunc(input, ypred)
 	end
 	bernoulli_eos = input[3,:].*eos + (1-input[3,:]).*(1-eos) #bernoulli end of sentence probabilities
 	sum -= log(bernoulli_eos)
+	
+	println(log(bernoulli_eos))
+
 	return sum
 end
 
@@ -100,12 +104,18 @@ function bivariate_prob(input, ypred, j)
 	M = div((size(ypred,1)-1),6)
 	mu1, mu2, std1, std2, corr = (ypred[M+1+j,:],ypred[2M+1+j,:],ypred[3M+1+j,:],ypred[4M+1+j,:],ypred[5M+1+j,:])
 
-	diff1 = input[1,:]-mu1
-	diff2 = input[2,:]-mu2
+	diff1 = input[1,:]./10000000-mu1
+	diff2 = input[2,:]./10000000-mu2
 	z = (diff1.^2)./(std1.^2)+(diff2.^2)./(std2.^2) - (2*corr.*diff1.*diff2)./(std1.*std2)
 	k = 1 - corr.^2
 	density = exp(-z./(2*k))
 	density = density./(2*pi.*std1.*std2.*sqrt(k))
+	
+	println("token", diff1)
+	println("token2", z)
+	println("token3", k)
+	println("token4", -z./(2*k))
+	println("density		dashing", density)
 	return density
 end
 
@@ -120,6 +130,8 @@ function output_function(ypred)
 	#corresponding outputs of the predictions
 	out[1,:] = sigm(end_of_stroke)
 	out[2:M+1,:] = softmax(w)				#pi
+	out[M+2:2M+1,:] = mu1
+	out[2M+2:3M+1,:] = 	mu2
 	out[3M+2:4M+1,:] = exp(std1)
 	out[4M+2:5M+1,:] = exp(std2)
 	out[5M+2:6M+1,:] = tanh(corr)
@@ -137,7 +149,7 @@ function predict(input, hidden_state, cell_state, weights, n)
 	for i=2:n
 		hidden_state[i],cell_state[i] = lstm_cell(vcat(input, hidden_state[i-1]), hidden_state[i], cell_state[i], lstmw[i])
 	end
-	return outw[:outw]*hcat(hidden_state) .+ outw[:outb]
+	return outw[:outw]*vcat(hidden_state...) .+ outw[:outb]
 end
 
 

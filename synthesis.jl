@@ -30,7 +30,7 @@ function main(args="")
 	trn = minibatch(data, o[:batchsize])
 	
 	#fixed variables
-	alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ .,?!'"
+	alphabet = " abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.,?!'" # space instead of unk
 	sentence = "Kerem Altay" #sequence to synthesize
 	output_len = 1+(6*o[:mixture]) #eos + (20 weights, 40 means, 40 standard deviations and 20 correlations) were used in experiments
 	window_size = lenght(alphabet)

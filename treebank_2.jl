@@ -12,11 +12,11 @@ function main(args="")
     s = ArgParseSettings()
     @add_arg_table s begin
         ("--epochs"; arg_type=Int; default=3; help="number of epoch ")
-        ("--batchsize"; arg_type=Int; default=5; help="size of minibatches")
-        ("--lr"; arg_type=Float64; default=0.3; help="learning rate")
+        ("--batchsize"; arg_type=Int; default=500; help="size of minibatches")
+        ("--lr"; arg_type=Float64; default=0.0001; help="learning rate")
         ("--winit"; arg_type=Float64; default=0.1; help="w initialized with winit*randn()")
 		("--momentum"; arg_type=Float64; default=0.99; help="momentum")
-		("--clip"; arg_type=Int; default=1; help="gradient clipping")
+		("--clip"; arg_type=Float64; default=1.0; help="gradient clipping")
 		("--unitnumber"; arg_type=Int; default=1000; help="number of units, sequence lenght")
 		("--vocab"; arg_type=Bool; default=false; help="characters or words, false for character")
 		("--seqlength"; arg_type=Int; default=20; help="Number of steps to unroll the network for.")
@@ -35,9 +35,9 @@ function main(args="")
 		tst = minibatch(vocab, split(test[1]), o[:batchsize]; atype=o[:atype])
 	else
 		vocab, indices = charVocabulary(train_data[1])
-		trn = minibatch(vocab, train_data[1], o[:batchsize]; atype=o[:atype])[1:101]
-		vld = minibatch(vocab, valid[1], o[:batchsize]; atype=o[:atype])[1:100]
-		tst = minibatch(vocab, test[1], o[:batchsize]; atype=o[:atype])[1:100]
+		trn = minibatch(vocab, train_data[1], o[:batchsize]; atype=o[:atype])
+		vld = minibatch(vocab, valid[1], o[:batchsize]; atype=o[:atype])
+		tst = minibatch(vocab, test[1], o[:batchsize]; atype=o[:atype])
 	end
 
 	#initialize weights and states
@@ -45,20 +45,20 @@ function main(args="")
 	hidden_state = initstate(o[:atype],o[:unitnumber], o[:batchsize])
 	cell_state = initstate(o[:atype], o[:unitnumber], o[:batchsize])
 	params = initparams(weights;learn = o[:lr], clip = o[:clip], momentum = o[:momentum])
-	
 	#
 	info("opts=",[(k,v) for (k,v) in o]...)
 	info("vocabulary: ", length(vocab))
 	loss(inputs) = model(weights, inputs, hidden_state, cell_state)
-	acc(inputs) = accuracy(inputs[2:end] ,(map(b->predict(weights, b, hidden_state, cell_state), inputs[1:end-1])))
+	acc(inputs) = ()#accuracy(inputs[2:end] ,(map(b->predict(weights, b, hidden_state, cell_state), inputs[1:end-1])))
 	report(epoch, inputs) = println((:epoch,epoch,:loss, loss(inputs), :acc, acc(inputs)))
 	#
 
 	
 	#train
-	info("Training... Size of traning: ", length(trn))
+	info("Training... Size of traning: ", length(trn),", batches")
 	validate_accuracy = 0
-	report(0, trn)
+	#report(0, trn)
+	
 	for epoch = 1:o[:epochs]
 		#train
 		train(trn, hidden_state, cell_state, weights, params;seq_length=o[:seqlength])
@@ -95,12 +95,13 @@ end
 function train(inputs, hidden_state, cell_state, weights, prms; seq_length = 25)
 	for t = 1:seq_length:length(inputs)-seq_length
 		r = t:t+seq_length-1
-println(r)
-		loss_grad = lossgradient(weights, inputs, hidden_state, cell_state; range = r)
-println(loss_grad)
+
+		Knet.gpuinfo()
+		lossgrad = lossgradient(weights, inputs, hidden_state, cell_state; range = r)
 		for k in keys(weights)
-			update!(weights[k], loss_grad[k], prms[k])
+			update!(weights[k], lossgrad[k])
 		end
+		
 	end
 end
 
@@ -186,10 +187,10 @@ function initweights(hidden, vocab, winit;atype=KnetArray{Float32})
     return w
 end
 
-function initparams(weights;learn = 0.1, clip=0, momentum=1.0)
+function initparams(weights;learn = 0.1, clip=0.0, momentum=1.0)
     prms = Dict()
     for k in keys(weights)
-		prms[k] = Momentum(;lr = learn, gclip = clip, gamma=0.9)
+		prms[k] = Momentum()#;lr = learn, gclip = clip, gamma=0.9)
     end
     return prms
 end
@@ -230,11 +231,11 @@ function reverseVocab(indices, vector)
 	return indices[indmax(vector)]
 end
 
-function loaddata(path="C:\\Users\\HP\\Desktop\\Comp 441\\Sequence Generation project")
+function loaddata(path="/mnt/kufs/scratch/kaltay13")
 	train="";valid="";test = ""
-	train = map((@compat readstring), Any["$path\\Mikolov_treebank_train.txt"])
-	valid =  map((@compat readstring), Any["$path\\Mikolov_treebank_valid.txt"])
-	test = map((@compat readstring), Any["$path\\Mikolov_treebank_test.txt"])
+	train = map((@compat readstring), Any["$path/Mikolov_treebank_train.txt"])
+	valid =  map((@compat readstring), Any["$path/Mikolov_treebank_valid.txt"])
+	test = map((@compat readstring), Any["$path/Mikolov_treebank_test.txt"])
 	
 	return train,valid,test
 end
@@ -242,8 +243,8 @@ end
 function loaddata(file; path="C:\\Users\\HP\\Desktop\\Comp 441\\Sequence Generation project\\$file")
 	text = "" 
 	for c in readdir(path)
-		for corpus in readdir("$path\\$c")
-			stream = open("$path\\$c\\$corpus")
+		for corpus in readdir("$path/$c")
+			stream = open("$path/$c/$corpus")
 			text = text*readstring(stream)
 			close(stream)
 		end
