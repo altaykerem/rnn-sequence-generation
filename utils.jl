@@ -3,11 +3,11 @@ using Gadfly
 
 function plotStrokes(strokes; title = "")
 	println("Plotting... ",title)
-	println(size(strokes))
-	xses = hcat(strokes...)[1,:]
-	ys = hcat(strokes...)[2,:]
+	xses = cumsum(hcat(strokes...)[1,:])
+	ys = cumsum(hcat(strokes...)[2,:])
 	println(xses)
 	println(ys)
+	println(cumsum(hcat(strokes...)[3,:]))
 	plot(x=xses, y=ys, Geom.point, Geom.line)
 end
 

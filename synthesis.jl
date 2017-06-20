@@ -26,7 +26,7 @@ function main(args="")
 	o = parse_args(s; as_symbols=true)
 	
 	###data
-	data = loaddata("lineStrokes")[1:10]
+	data = synthesisData("lineStrokes")[1:10]
 	trn = minibatch(data, o[:batchsize])
 	
 	#fixed variables

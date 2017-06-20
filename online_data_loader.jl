@@ -6,6 +6,7 @@ include("utils.jl")
 
 function main()
 	s, a = synthesisData()
+	println("size ss: ", length(s[1]))
 	plotStrokes(s[1]; title = a[1])
 end
 
@@ -74,7 +75,6 @@ function synthesisData()
 				push!(asciis, lines[currentLine])
 				currentLine += 1
 			end
-			break
 		end
 	end
 	info("Read, ",length(asciis)," lines")
@@ -87,17 +87,25 @@ function readOnlineXml(doc, strokes)
 	###get minimum x and y values
 	v_offsets = find_element(find_element(docroot, "WhiteboardDescription"), "VerticallyOppositeCoords")
 	h_offsets = find_element(find_element(docroot, "WhiteboardDescription"), "HorizontallyOppositeCoords")
-	x_min = parse(Int, attribute(XMLElement(v_offsets), "x"))
-	y_min = parse(Int, attribute(XMLElement(h_offsets), "y"))
+	x_min = parse(Int, attribute(XMLElement(v_offsets), "x")) - 100
+	y_min = parse(Int, attribute(XMLElement(h_offsets), "y")) - 100
 
 	###read all points
 	strokeset = find_element(docroot, "StrokeSet")
 	for stroke in child_elements(strokeset)
 		prevx, prevy = 0, 0
 		for point in child_elements(stroke)
+			#offset from table
 			x = parse(Int, attribute(XMLElement(point), "x")) - x_min
 			y = parse(Int, attribute(XMLElement(point), "y")) - y_min
-			push!(strokes, [x-prevx,y-prevy,0])		#keep x,y offsets from previous input
+			
+			#offsets from previous input, clip to reasonable numbers
+			dx = min(x-prevx, 500)
+			dx = max(x-prevx, -500)
+			dy = min(y-prevy, 500)
+			dy = max(y-prevy, -500)
+			
+			push!(strokes, [dx/50,dy/50,0])		
 			prevx = x
 			prevy = y
 		end

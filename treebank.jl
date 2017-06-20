@@ -97,7 +97,7 @@ function train(inputs, hidden_state, cell_state, weights, prms; seq_length = 25)
 		r = t:t+seq_length-1
 println(r)
 		loss_grad = lossgradient(weights, inputs, hidden_state, cell_state; range = r)
-println(loss_grad)
+
 		for k in keys(weights)
 			update!(weights[k], loss_grad[k], prms[k])
 		end
